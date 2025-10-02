@@ -2,12 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FiUpload, FiCopy, FiDownload, FiTrash2, FiFileText, FiShare2 } from 'react-icons/fi';
 
 type Mode = 'encode' | 'decode';
-const MAX_CHARS = 1999999; // limite solicitado
 
 const ZipEncoder: React.FC = () => {
   const [mode, setMode] = useState<Mode>('encode');
   const [base64Result, setBase64Result] = useState<string>('');
-  const [base64Parts, setBase64Parts] = useState<string[] | null>(null);
   const [base64Input, setBase64Input] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -23,7 +21,7 @@ const ZipEncoder: React.FC = () => {
   const loadFromURL = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const sharedData = urlParams.get('data');
-
+    
     if (sharedData) {
       try {
         const decodedData = JSON.parse(atob(sharedData));
@@ -44,24 +42,15 @@ const ZipEncoder: React.FC = () => {
       return;
     }
 
-    if (base64Result.length > MAX_CHARS) {
-      alert(
-        'O arquivo é grande demais para ser compartilhado via URL. ' +
-        'Por favor, baixe as partes (.part1/.part2) e transfira manualmente. ' +
-        'Lembre-se: para decodificar, será necessário juntar as partes num único arquivo antes.'
-      );
-      return;
-    }
-
     try {
       const dataToShare = {
         fileName,
         base64: base64Result
       };
-
+      
       const encodedData = btoa(JSON.stringify(dataToShare));
       const shareURL = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
-
+      
       navigator.clipboard.writeText(shareURL).then(() => {
         alert('URL de compartilhamento copiada para área de transferência!\n\nVocê pode acessar este link em qualquer dispositivo para carregar o arquivo.');
       }).catch(() => {
@@ -127,19 +116,7 @@ const ZipEncoder: React.FC = () => {
       const result = event.target?.result as string;
       // Remove o prefixo "data:application/zip;base64," se existir
       const base64 = result.split(',')[1] || result;
-
-      // Se maior que limite, divide em duas partes
-      if (base64.length > MAX_CHARS) {
-        const midpoint = Math.ceil(base64.length / 2);
-        const part1 = base64.substring(0, midpoint);
-        const part2 = base64.substring(midpoint);
-        setBase64Result(''); // não guardar todo numa string para evitar memória extra (mas mantemos para exibição se quiser)
-        setBase64Parts([part1, part2]);
-      } else {
-        setBase64Result(base64);
-        setBase64Parts(null);
-      }
-
+      setBase64Result(base64);
       setIsLoading(false);
     };
 
@@ -178,10 +155,10 @@ const ZipEncoder: React.FC = () => {
 
     try {
       setIsLoading(true);
-
+      
       // Limpa a string Base64 removendo espaços e quebras de linha
       const cleanBase64 = base64Input.replace(/\s/g, '');
-
+      
       // Valida se é uma string Base64 válida
       if (!/^[A-Za-z0-9+/]*={0,2}$/.test(cleanBase64)) {
         throw new Error('String Base64 inválida');
@@ -196,7 +173,7 @@ const ZipEncoder: React.FC = () => {
 
       // Cria o blob do arquivo ZIP
       const blob = new Blob([bytes], { type: 'application/zip' });
-
+      
       // Cria link para download
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -217,14 +194,6 @@ const ZipEncoder: React.FC = () => {
 
   const copyToClipboard = async () => {
     try {
-      if (base64Parts) {
-        alert('Resultado muito grande para copiar. Por favor, baixe as partes (.part1 / .part2).');
-        return;
-      }
-      if (!base64Result) {
-        alert('Nada para copiar.');
-        return;
-      }
       await navigator.clipboard.writeText(base64Result);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
@@ -234,24 +203,6 @@ const ZipEncoder: React.FC = () => {
   };
 
   const downloadBase64 = () => {
-    if (base64Parts) {
-      // Baixa as duas partes separadamente
-      const base = fileName ? fileName.replace('.zip', '') : 'file';
-      base64Parts.forEach((part, idx) => {
-        const element = document.createElement('a');
-        const file = new Blob([part], { type: 'text/plain' });
-        element.href = URL.createObjectURL(file);
-        element.download = `${base}_base64.part${idx + 1}.txt`;
-        document.body.appendChild(element);
-        element.click();
-        document.body.removeChild(element);
-      });
-      alert('Arquivo grande dividido em 2 partes. Baixadas como .part1.txt e .part2.txt. ' +
-            'Para decodificar, junte as duas partes em um único arquivo (concatenação) e faça o decode normalmente.');
-      return;
-    }
-
-    // comportamento padrão para arquivos pequenos
     const element = document.createElement('a');
     const file = new Blob([base64Result], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
@@ -261,23 +212,9 @@ const ZipEncoder: React.FC = () => {
     document.body.removeChild(element);
   };
 
-  const downloadPart = (index: number) => {
-    if (!base64Parts) return;
-    const part = base64Parts[index];
-    const base = fileName ? fileName.replace('.zip', '') : 'file';
-    const element = document.createElement('a');
-    const file = new Blob([part], { type: 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = `${base}_base64.part${index + 1}.txt`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-  };
-
   const clearResult = () => {
     setBase64Result('');
     setBase64Input('');
-    setBase64Parts(null);
     setFileName('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -362,7 +299,7 @@ const ZipEncoder: React.FC = () => {
             </div>
 
             {/* Result Area for Encode */}
-            {(base64Result || base64Parts) && (
+            {base64Result && (
               <>
                 <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
                   <div className="flex items-center justify-between mb-4">
@@ -399,62 +336,15 @@ const ZipEncoder: React.FC = () => {
                       <strong>Arquivo:</strong> {fileName}
                     </p>
                     <p className="text-sm text-gray-600">
-                      <strong>Tamanho:</strong>{' '}
-                      {base64Parts
-                        ? `${(base64Parts[0].length + base64Parts[1].length).toLocaleString()} caracteres (dividido em 2 partes)`
-                        : `${base64Result.length.toLocaleString()} caracteres`}
+                      <strong>Tamanho:</strong> {base64Result.length.toLocaleString()} caracteres
                     </p>
                   </div>
 
-                  {base64Parts ? (
-                    <div className="space-y-3">
-                      <div className="p-4 bg-yellow-50 rounded">
-                        <p className="text-sm text-yellow-800">
-                          <strong>Atenção:</strong> O resultado foi dividido em <strong>2 partes</strong> porque excede {MAX_CHARS.toLocaleString()} caracteres.
-                          <br />
-                          É responsabilidade do usuário juntar as duas partes (concatenar part1 + part2 em um único arquivo) antes de fazer o decode. O decode NÃO foi alterado.
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <p className="text-sm font-medium mb-2">Parte 1</p>
-                          <p className="text-xs text-gray-600 mb-3">
-                            Tamanho: {base64Parts[0].length.toLocaleString()} caracteres
-                          </p>
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => downloadPart(0)}
-                              className="px-3 py-2 bg-blue-500 text-white rounded"
-                            >
-                              Baixar Parte 1
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <p className="text-sm font-medium mb-2">Parte 2</p>
-                          <p className="text-xs text-gray-600 mb-3">
-                            Tamanho: {base64Parts[1].length.toLocaleString()} caracteres
-                          </p>
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => downloadPart(1)}
-                              className="px-3 py-2 bg-blue-500 text-white rounded"
-                            >
-                              Baixar Parte 2
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                      <code className="text-sm text-gray-700 break-all whitespace-pre-wrap">
-                        {base64Result}
-                      </code>
-                    </div>
-                  )}
+                  <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                    <code className="text-sm text-gray-700 break-all whitespace-pre-wrap">
+                      {base64Result}
+                    </code>
+                  </div>
                 </div>
 
                 {/* Save and Share Options */}
@@ -462,7 +352,7 @@ const ZipEncoder: React.FC = () => {
                   <h3 className="text-lg font-semibold text-gray-800 mb-4">
                     🌐 Compartilhar e Baixar
                   </h3>
-
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-green-50 rounded-lg p-4">
                       <h4 className="font-medium text-green-800 mb-2">
@@ -470,7 +360,7 @@ const ZipEncoder: React.FC = () => {
                         Compartilhar URL
                       </h4>
                       <p className="text-sm text-green-600 mb-3">
-                        Gera link para acessar de qualquer PC (apenas para arquivos menores que {MAX_CHARS.toLocaleString()} caracteres)
+                        Gera link para acessar de qualquer PC
                       </p>
                       <button
                         onClick={shareViaURL}
@@ -486,7 +376,7 @@ const ZipEncoder: React.FC = () => {
                         Download Arquivo
                       </h4>
                       <p className="text-sm text-purple-600 mb-3">
-                        Baixa .txt (ou .part1/.part2 se dividido)
+                        Baixa .txt para transferir manualmente
                       </p>
                       <button
                         onClick={downloadBase64}
@@ -500,8 +390,8 @@ const ZipEncoder: React.FC = () => {
                   <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
                     <p className="text-sm text-yellow-800">
                       <strong>💡 Opções:</strong><br/>
-                      • <strong>Compartilhar URL:</strong> Funciona apenas para resultados menores que {MAX_CHARS.toLocaleString()} caracteres.<br/>
-                      • <strong>Download:</strong> Para backup ou transferência manual. Se o arquivo foi dividido, serão criadas duas partes.
+                      • <strong>Compartilhar URL:</strong> Melhor para acessar em outros dispositivos<br/>
+                      • <strong>Download:</strong> Para backup ou transferência manual
                     </p>
                   </div>
                 </div>
@@ -518,7 +408,7 @@ const ZipEncoder: React.FC = () => {
               <h2 className="text-xl font-semibold text-gray-800 mb-4">
                 Métodos de Entrada Base64
               </h2>
-
+              
               {/* Method 1: Paste Base64 String */}
               <div className="mb-6">
                 <h3 className="text-lg font-medium text-gray-700 mb-3">
@@ -631,7 +521,7 @@ const ZipEncoder: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-800 mb-3">
             Como usar:
           </h3>
-
+          
           {mode === 'encode' ? (
             <div>
               <ol className="list-decimal list-inside space-y-2 text-gray-600 mb-4">
@@ -640,12 +530,12 @@ const ZipEncoder: React.FC = () => {
                 <li>Aguarde o processamento automático</li>
                 <li>Escolha como compartilhar/baixar o resultado</li>
               </ol>
-
+              
               <div className="bg-blue-50 rounded-lg p-4 mb-4">
                 <h4 className="font-medium text-blue-800 mb-2">🌐 Opções de Acesso:</h4>
                 <ul className="text-sm text-blue-700 space-y-1">
-                  <li><strong>• Compartilhar URL:</strong> Apenas para resultados menores que {MAX_CHARS.toLocaleString()} caracteres</li>
-                  <li><strong>• Download:</strong> Arquivo .txt; se muito grande, será dividido em .part1 e .part2</li>
+                  <li><strong>• Compartilhar URL:</strong> Gera link para acessar de qualquer lugar</li>
+                  <li><strong>• Download .txt:</strong> Arquivo para transferir manualmente</li>
                 </ul>
               </div>
             </div>
@@ -657,16 +547,16 @@ const ZipEncoder: React.FC = () => {
               <li>O arquivo .zip será baixado automaticamente</li>
             </ol>
           )}
-
+          
           <div className="mt-4 p-3 bg-purple-50 rounded-lg">
             <p className="text-sm text-purple-800">
               <strong>🌐 Acesso de Outros PCs:</strong><br/>
-              • Use "Compartilhar URL" para acessar de qualquer dispositivo (quando disponível)<br/>
+              • Use "Compartilhar URL" para acessar de qualquer dispositivo<br/>
               • URLs funcionam mesmo no GitHub Pages<br/>
               • Dados ficam codificados na própria URL (sem servidor)
             </p>
           </div>
-
+          
           <div className="mt-4 p-3 bg-green-50 rounded-lg">
             <p className="text-sm text-green-800">
               <strong>🔒 Privacidade:</strong> Todo processamento é local. Nenhum arquivo é enviado para servidores.
