@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { FiUpload, FiCheckCircle, FiAlertCircle } from 'react-icons/fi';
 
 const UPLOAD_URL = 'https://webhook-proxy-eosin.vercel.app/api/upload';
