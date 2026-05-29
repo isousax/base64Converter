@@ -1,7 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { FiUpload, FiCopy, FiDownload, FiTrash2, FiFileText, FiShare2 } from 'react-icons/fi';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { FiUpload, FiCopy, FiDownload, FiTrash2, FiFileText, FiShare2, FiArrowRight, FiCheck, FiShield, FiZap, FiGlobe, FiLock } from 'react-icons/fi';
 
 type Mode = 'encode' | 'decode';
+
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
 
 const ZipEncoder: React.FC = () => {
   const [mode, setMode] = useState<Mode>('encode');
@@ -10,12 +16,22 @@ const ZipEncoder: React.FC = () => {
   const [fileName, setFileName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [copySuccess, setCopySuccess] = useState<boolean>(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const base64FileInputRef = useRef<HTMLInputElement>(null);
+  const toastId = useRef(0);
+
+  const showToast = useCallback((message: string, type: Toast['type'] = 'success') => {
+    const id = ++toastId.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }, []);
 
   // Load from URL on component mount
   useEffect(() => {
     loadFromURL();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadFromURL = () => {
@@ -28,8 +44,8 @@ const ZipEncoder: React.FC = () => {
         setBase64Result(decodedData.base64);
         setFileName(decodedData.fileName);
         setMode('encode');
-        // Remove the URL parameter after loading
         window.history.replaceState({}, document.title, window.location.pathname);
+        showToast('Dados carregados do link compartilhado');
       } catch (error) {
         console.error('Erro ao carregar dados da URL:', error);
       }
@@ -38,73 +54,64 @@ const ZipEncoder: React.FC = () => {
 
   const shareViaURL = () => {
     if (!base64Result || !fileName) {
-      alert('Nenhum resultado para compartilhar');
+      showToast('Nenhum resultado para compartilhar', 'error');
       return;
     }
 
     try {
-      const dataToShare = {
-        fileName,
-        base64: base64Result
-      };
-      
+      const dataToShare = { fileName, base64: base64Result };
       const encodedData = btoa(JSON.stringify(dataToShare));
       const shareURL = `${window.location.origin}${window.location.pathname}?data=${encodedData}`;
       
       navigator.clipboard.writeText(shareURL).then(() => {
-        alert('URL de compartilhamento copiada para área de transferência!\n\nVocê pode acessar este link em qualquer dispositivo para carregar o arquivo.');
+        showToast('Link copiado! Acesse de qualquer dispositivo.');
       }).catch(() => {
-        // Fallback for browsers that don't support clipboard API
         const textArea = document.createElement('textarea');
         textArea.value = shareURL;
         document.body.appendChild(textArea);
         textArea.select();
         document.execCommand('copy');
         document.body.removeChild(textArea);
-        alert('URL de compartilhamento copiada!\n\nVocê pode acessar este link em qualquer dispositivo.');
+        showToast('Link copiado!');
       });
-    } catch (error) {
-      alert('Erro ao gerar URL de compartilhamento. O arquivo pode ser muito grande.');
+    } catch {
+      showToast('Erro ao gerar link. Arquivo muito grande.', 'error');
     }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (mode === 'encode') {
-        processFile(file);
-      } else {
-        processBase64File(file);
-      }
+      if (mode === 'encode') processFile(file);
+      else processBase64File(file);
     }
   };
 
   const handleBase64FileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      processBase64File(file);
-    }
+    if (file) processBase64File(file);
   };
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    setIsDragOver(false);
     const file = event.dataTransfer.files[0];
     if (file) {
-      if (mode === 'encode') {
-        processFile(file);
-      } else {
-        processBase64File(file);
-      }
+      if (mode === 'encode') processFile(file);
+      else processBase64File(file);
     }
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    setIsDragOver(true);
   };
+
+  const handleDragLeave = () => setIsDragOver(false);
 
   const processFile = (file: File) => {
     if (!file.name.toLowerCase().endsWith('.zip')) {
-      alert('Por favor, selecione apenas arquivos .zip');
+      showToast('Selecione apenas arquivos .zip', 'error');
       return;
     }
 
@@ -114,14 +121,14 @@ const ZipEncoder: React.FC = () => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const result = event.target?.result as string;
-      // Remove o prefixo "data:application/zip;base64," se existir
       const base64 = result.split(',')[1] || result;
       setBase64Result(base64);
       setIsLoading(false);
+      showToast(`${file.name} convertido com sucesso!`);
     };
 
     reader.onerror = () => {
-      alert('Erro ao ler o arquivo');
+      showToast('Erro ao ler o arquivo', 'error');
       setIsLoading(false);
     };
 
@@ -137,10 +144,11 @@ const ZipEncoder: React.FC = () => {
       const result = event.target?.result as string;
       setBase64Input(result);
       setIsLoading(false);
+      showToast('Arquivo Base64 carregado');
     };
 
     reader.onerror = () => {
-      alert('Erro ao ler o arquivo');
+      showToast('Erro ao ler o arquivo', 'error');
       setIsLoading(false);
     };
 
@@ -149,32 +157,25 @@ const ZipEncoder: React.FC = () => {
 
   const decodeBase64 = () => {
     if (!base64Input.trim()) {
-      alert('Por favor, insira uma string Base64 válida');
+      showToast('Insira uma string Base64 válida', 'error');
       return;
     }
 
     try {
       setIsLoading(true);
-      
-      // Limpa a string Base64 removendo espaços e quebras de linha
       const cleanBase64 = base64Input.replace(/\s/g, '');
       
-      // Valida se é uma string Base64 válida
       if (!/^[A-Za-z0-9+/]*={0,2}$/.test(cleanBase64)) {
         throw new Error('String Base64 inválida');
       }
 
-      // Converte Base64 para bytes
       const binaryString = atob(cleanBase64);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Cria o blob do arquivo ZIP
       const blob = new Blob([bytes], { type: 'application/zip' });
-      
-      // Cria link para download
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -185,10 +186,10 @@ const ZipEncoder: React.FC = () => {
       URL.revokeObjectURL(url);
 
       setIsLoading(false);
-      alert('Arquivo ZIP decodificado e baixado com sucesso!');
-    } catch (error) {
+      showToast('ZIP decodificado e baixado!');
+    } catch {
       setIsLoading(false);
-      alert('Erro ao decodificar: Verifique se a string Base64 está correta');
+      showToast('Erro ao decodificar. Verifique o Base64.', 'error');
     }
   };
 
@@ -196,9 +197,10 @@ const ZipEncoder: React.FC = () => {
     try {
       await navigator.clipboard.writeText(base64Result);
       setCopySuccess(true);
+      showToast('Base64 copiado!');
       setTimeout(() => setCopySuccess(false), 2000);
-    } catch (err) {
-      alert('Erro ao copiar para a área de transferência');
+    } catch {
+      showToast('Erro ao copiar', 'error');
     }
   };
 
@@ -210,83 +212,111 @@ const ZipEncoder: React.FC = () => {
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
+    showToast('Download iniciado');
   };
 
   const clearResult = () => {
     setBase64Result('');
     setBase64Input('');
     setFileName('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-    if (base64FileInputRef.current) {
-      base64FileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (base64FileInputRef.current) base64FileInputRef.current.value = '';
   };
 
-  const triggerFileInput = () => {
-    fileInputRef.current?.click();
-  };
-
-  const triggerBase64FileInput = () => {
-    base64FileInputRef.current?.click();
+  const formatBytes = (chars: number) => {
+    const bytes = Math.ceil(chars * 0.75);
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(2)} MB`;
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">
-            ZIP Base64 Converter
+    <div className="min-h-screen bg-surface-950 bg-mesh bg-grid relative">
+      {/* Ambient glow orbs */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-96 h-96 rounded-full bg-brand-500/10 blur-[120px] animate-pulse-slow" />
+        <div className="absolute top-1/2 -left-40 w-80 h-80 rounded-full bg-emerald-500/8 blur-[100px] animate-pulse-slow" style={{ animationDelay: '2s' }} />
+      </div>
+
+      <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-16">
+        {/* Header */}
+        <header className="text-center mb-12 animate-fade-in-up">
+          <div className="inline-flex items-center gap-2 mb-6">
+            <span className="badge bg-brand-500/15 text-brand-300 border border-brand-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-pulse" />
+              v1.0 — 100% Local
+            </span>
+          </div>
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-4">
+            <span className="text-white">Base64</span>{' '}
+            <span className="text-gradient">Vault</span>
           </h1>
-          <p className="text-gray-600">
-            Converta arquivos .zip para Base64 ou decodifique Base64 de volta para .zip
+          <p className="text-slate-400 text-lg sm:text-xl max-w-2xl mx-auto leading-relaxed">
+            Converta <span className="text-white font-medium">.zip</span> para Base64 e vice-versa.
+            Rápido, seguro e sem enviar nada a servidores.
           </p>
-        </div>
+        </header>
 
         {/* Mode Selector */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <div className="flex justify-center space-x-4">
+        <div className="flex justify-center mb-10 animate-fade-in-up" style={{ animationDelay: '.1s' }}>
+          <div className="inline-flex p-1.5 rounded-2xl bg-white/[.04] border border-white/[.06] backdrop-blur-sm">
             <button
               onClick={() => setMode('encode')}
-              className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+              className={`relative px-6 sm:px-8 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
                 mode === 'encode'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'text-white shadow-lg'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              🔒 Encode (.zip → Base64)
+              {mode === 'encode' && (
+                <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 shadow-glow-brand" />
+              )}
+              <span className="relative flex items-center gap-2">
+                <FiLock className="w-4 h-4" />
+                Encode
+                <span className="hidden sm:inline text-xs opacity-70">.zip → Base64</span>
+              </span>
             </button>
             <button
               onClick={() => setMode('decode')}
-              className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+              className={`relative px-6 sm:px-8 py-3 rounded-xl text-sm font-semibold transition-all duration-300 ${
                 mode === 'decode'
-                  ? 'bg-green-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'text-white shadow-lg'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              🔓 Decode (Base64 → .zip)
+              {mode === 'decode' && (
+                <span className="absolute inset-0 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 shadow-glow-emerald" />
+              )}
+              <span className="relative flex items-center gap-2">
+                <FiArrowRight className="w-4 h-4" />
+                Decode
+                <span className="hidden sm:inline text-xs opacity-70">Base64 → .zip</span>
+              </span>
             </button>
           </div>
         </div>
 
-        {/* Encode Mode */}
+        {/* ─── ENCODE MODE ─── */}
         {mode === 'encode' && (
-          <>
-            {/* Upload Area for ZIP files */}
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <div className="space-y-6 animate-fade-in-up" style={{ animationDelay: '.15s' }}>
+            {/* Drop zone */}
+            <div className="glass-card glass-card-hover p-8">
               <div
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
-                className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition-colors cursor-pointer"
-                onClick={triggerFileInput}
+                onDragLeave={handleDragLeave}
+                onClick={() => fileInputRef.current?.click()}
+                className={`drop-zone p-10 sm:p-14 ${isDragOver ? 'border-brand-400 bg-brand-500/10 scale-[1.01]' : ''}`}
               >
-                <FiUpload className="mx-auto text-4xl text-gray-400 mb-4" />
-                <p className="text-lg text-gray-600 mb-2">
-                  Arraste e solte seu arquivo .zip aqui ou clique para selecionar
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-5 transition-all duration-300 ${isDragOver ? 'bg-brand-500/20 scale-110' : 'bg-white/[.05]'}`}>
+                  <FiUpload className={`w-7 h-7 transition-colors ${isDragOver ? 'text-brand-300' : 'text-slate-400'}`} />
+                </div>
+                <p className="text-base sm:text-lg text-slate-300 mb-1 font-medium">
+                  Arraste seu <span className="text-white">.zip</span> aqui
                 </p>
-                <p className="text-sm text-gray-400">
-                  Apenas arquivos .zip são aceitos
+                <p className="text-sm text-slate-500">
+                  ou clique para selecionar
                 </p>
                 <input
                   ref={fileInputRef}
@@ -298,167 +328,140 @@ const ZipEncoder: React.FC = () => {
               </div>
             </div>
 
-            {/* Result Area for Encode */}
+            {/* Result */}
             {base64Result && (
-              <>
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-semibold text-gray-800">
-                      Resultado Base64
-                    </h2>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={copyToClipboard}
-                        className="flex items-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                      >
-                        <FiCopy className="mr-2" />
+              <div className="space-y-6 animate-fade-in-up">
+                <div className="glass-card p-6 sm:p-8">
+                  {/* Result header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <div>
+                      <h2 className="text-xl font-bold text-white mb-1">Resultado Base64</h2>
+                      <div className="flex items-center gap-3 text-sm text-slate-400">
+                        <span className="flex items-center gap-1.5">
+                          <FiFileText className="w-3.5 h-3.5" />
+                          {fileName}
+                        </span>
+                        <span className="w-1 h-1 rounded-full bg-slate-600" />
+                        <span>{base64Result.length.toLocaleString()} chars</span>
+                        <span className="w-1 h-1 rounded-full bg-slate-600" />
+                        <span>~{formatBytes(base64Result.length)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={copyToClipboard} className="btn-primary">
+                        {copySuccess ? <FiCheck className="w-4 h-4" /> : <FiCopy className="w-4 h-4" />}
                         {copySuccess ? 'Copiado!' : 'Copiar'}
                       </button>
-                      <button
-                        onClick={downloadBase64}
-                        className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                      >
-                        <FiDownload className="mr-2" />
-                        Download
+                      <button onClick={downloadBase64} className="btn-ghost">
+                        <FiDownload className="w-4 h-4" />
+                        <span className="hidden sm:inline">Download</span>
                       </button>
-                      <button
-                        onClick={clearResult}
-                        className="flex items-center px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                      >
-                        <FiTrash2 className="mr-2" />
-                        Limpar
+                      <button onClick={clearResult} className="btn-danger">
+                        <FiTrash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
 
-                  <div className="mb-4">
-                    <p className="text-sm text-gray-600 mb-2">
-                      <strong>Arquivo:</strong> {fileName}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      <strong>Tamanho:</strong> {base64Result.length.toLocaleString()} caracteres
-                    </p>
-                  </div>
-
-                  <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                    <code className="text-sm text-gray-700 break-all whitespace-pre-wrap">
-                      {base64Result}
-                    </code>
+                  {/* Code block */}
+                  <div className="code-block max-h-72 break-all whitespace-pre-wrap">
+                    {base64Result}
                   </div>
                 </div>
 
-                {/* Save and Share Options */}
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                    🌐 Compartilhar e Baixar
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-green-50 rounded-lg p-4">
-                      <h4 className="font-medium text-green-800 mb-2">
-                        <FiShare2 className="inline mr-2" />
-                        Compartilhar URL
-                      </h4>
-                      <p className="text-sm text-green-600 mb-3">
-                        Gera link para acessar de qualquer PC
-                      </p>
-                      <button
-                        onClick={shareViaURL}
-                        className="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
-                      >
-                        Gerar Link
-                      </button>
-                    </div>
-
-                    <div className="bg-purple-50 rounded-lg p-4">
-                      <h4 className="font-medium text-purple-800 mb-2">
-                        <FiDownload className="inline mr-2" />
-                        Download Arquivo
-                      </h4>
-                      <p className="text-sm text-purple-600 mb-3">
-                        Baixa .txt para transferir manualmente
-                      </p>
-                      <button
-                        onClick={downloadBase64}
-                        className="w-full bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition-colors"
-                      >
-                        Baixar .txt
-                      </button>
+                {/* Share & Export */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="glass-card glass-card-hover p-6 group">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-500/25 transition-colors">
+                        <FiShare2 className="w-5 h-5 text-emerald-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-white mb-1">Compartilhar via Link</h3>
+                        <p className="text-sm text-slate-400 mb-4">Gera URL para acessar de qualquer dispositivo</p>
+                        <button onClick={shareViaURL} className="btn-success w-full">
+                          <FiGlobe className="w-4 h-4" /> Gerar Link
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      <strong>💡 Opções:</strong><br/>
-                      • <strong>Compartilhar URL:</strong> Melhor para acessar em outros dispositivos<br/>
-                      • <strong>Download:</strong> Para backup ou transferência manual
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        {/* Decode Mode */}
-        {mode === 'decode' && (
-          <>
-            {/* Input Methods for Base64 */}
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-              <h2 className="text-xl font-semibold text-gray-800 mb-4">
-                Métodos de Entrada Base64
-              </h2>
-              
-              {/* Method 1: Paste Base64 String */}
-              <div className="mb-6">
-                <h3 className="text-lg font-medium text-gray-700 mb-3">
-                  Método 1: Colar String Base64
-                </h3>
-                <div className="space-y-4">
-                  <textarea
-                    value={base64Input}
-                    onChange={(e) => setBase64Input(e.target.value)}
-                    placeholder="Cole sua string Base64 aqui..."
-                    className="w-full h-32 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={decodeBase64}
-                      disabled={!base64Input.trim() || isLoading}
-                      className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    >
-                      <FiDownload className="mr-2" />
-                      Decodificar e Baixar ZIP
-                    </button>
-                    <button
-                      onClick={clearResult}
-                      className="flex items-center px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                    >
-                      <FiTrash2 className="mr-2" />
-                      Limpar
-                    </button>
+                  <div className="glass-card glass-card-hover p-6 group">
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center flex-shrink-0 group-hover:bg-brand-500/25 transition-colors">
+                        <FiDownload className="w-5 h-5 text-brand-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-white mb-1">Exportar Arquivo</h3>
+                        <p className="text-sm text-slate-400 mb-4">Baixa .txt para transferência manual</p>
+                        <button onClick={downloadBase64} className="btn-primary w-full">
+                          <FiDownload className="w-4 h-4" /> Baixar .txt
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
+            )}
+          </div>
+        )}
 
-              {/* Method 2: Upload Base64 File */}
+        {/* ─── DECODE MODE ─── */}
+        {mode === 'decode' && (
+          <div className="space-y-6 animate-fade-in-up" style={{ animationDelay: '.15s' }}>
+            <div className="glass-card p-6 sm:p-8">
+              <h2 className="text-xl font-bold text-white mb-6">Entrada Base64</h2>
+
+              {/* Paste area */}
+              <div className="mb-8">
+                <label className="block text-sm font-medium text-slate-300 mb-2">Cole a string Base64</label>
+                <textarea
+                  value={base64Input}
+                  onChange={(e) => setBase64Input(e.target.value)}
+                  placeholder="Cole sua string Base64 aqui..."
+                  className="w-full h-36 p-4 rounded-xl bg-surface-950/80 border border-white/[.06] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500/30 transition-all text-sm font-mono"
+                />
+                <div className="flex items-center gap-3 mt-4">
+                  <button
+                    onClick={decodeBase64}
+                    disabled={!base64Input.trim() || isLoading}
+                    className="btn-success disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:transform-none"
+                  >
+                    <FiDownload className="w-4 h-4" />
+                    Decodificar e Baixar ZIP
+                  </button>
+                  {base64Input && (
+                    <button onClick={clearResult} className="btn-ghost">
+                      <FiTrash2 className="w-4 h-4" /> Limpar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="relative my-8">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-white/[.06]" />
+                </div>
+                <div className="relative flex justify-center">
+                  <span className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-widest bg-surface-900/80">ou</span>
+                </div>
+              </div>
+
+              {/* Upload Base64 file */}
               <div>
-                <h3 className="text-lg font-medium text-gray-700 mb-3">
-                  Método 2: Upload de Arquivo Base64
-                </h3>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Upload de arquivo .txt com Base64</label>
                 <div
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 transition-colors cursor-pointer"
-                  onClick={triggerBase64FileInput}
+                  onDragLeave={handleDragLeave}
+                  onClick={() => base64FileInputRef.current?.click()}
+                  className={`drop-zone p-8 ${isDragOver ? 'border-emerald-400 bg-emerald-500/10' : ''}`}
                 >
-                  <FiFileText className="mx-auto text-3xl text-gray-400 mb-3" />
-                  <p className="text-gray-600 mb-2">
-                    Arraste e solte um arquivo .txt com Base64 ou clique para selecionar
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    Arquivos de texto (.txt) contendo Base64
-                  </p>
+                  <div className="w-12 h-12 rounded-xl bg-white/[.05] flex items-center justify-center mb-3">
+                    <FiFileText className="w-5 h-5 text-slate-400" />
+                  </div>
+                  <p className="text-sm text-slate-300 font-medium">Arraste um .txt aqui</p>
+                  <p className="text-xs text-slate-500 mt-0.5">ou clique para selecionar</p>
                   <input
                     ref={base64FileInputRef}
                     type="file"
@@ -470,99 +473,81 @@ const ZipEncoder: React.FC = () => {
               </div>
             </div>
 
-            {/* Base64 Display for Decode Mode */}
+            {/* Loaded Base64 preview */}
             {base64Input && (
-              <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+              <div className="glass-card p-6 sm:p-8 animate-fade-in-up">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-gray-800">
-                    Base64 Carregado
-                  </h2>
-                  <button
-                    onClick={decodeBase64}
-                    disabled={isLoading}
-                    className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-400"
-                  >
-                    <FiDownload className="mr-2" />
-                    Decodificar e Baixar ZIP
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Base64 Carregado</h2>
+                    <p className="text-sm text-slate-400 mt-0.5">{base64Input.length.toLocaleString()} caracteres</p>
+                  </div>
+                  <button onClick={decodeBase64} disabled={isLoading} className="btn-success">
+                    <FiDownload className="w-4 h-4" /> Decodificar
                   </button>
                 </div>
-
-                <div className="mb-4">
-                  <p className="text-sm text-gray-600">
-                    <strong>Tamanho:</strong> {base64Input.length.toLocaleString()} caracteres
-                  </p>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-4 max-h-48 overflow-y-auto">
-                  <code className="text-sm text-gray-700 break-all whitespace-pre-wrap">
-                    {base64Input.substring(0, 500)}
-                    {base64Input.length > 500 && '... (truncado para exibição)'}
-                  </code>
+                <div className="code-block max-h-48 break-all whitespace-pre-wrap">
+                  {base64Input.substring(0, 500)}
+                  {base64Input.length > 500 && (
+                    <span className="text-slate-500"> ... (truncado)</span>
+                  )}
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
 
-        {/* Loading */}
+        {/* Loading overlay */}
         {isLoading && (
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-            <div className="flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              <span className="ml-3 text-gray-600">
-                {mode === 'encode' ? 'Codificando arquivo...' : 'Decodificando Base64...'}
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-surface-950/60 backdrop-blur-sm animate-fade-in">
+            <div className="glass-card p-8 flex flex-col items-center gap-4">
+              <div className="w-10 h-10 rounded-full border-2 border-brand-500/30 border-t-brand-400 animate-spin" />
+              <span className="text-sm font-medium text-slate-300">
+                {mode === 'encode' ? 'Codificando...' : 'Decodificando...'}
               </span>
             </div>
           </div>
         )}
 
-        {/* Instructions */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">
-            Como usar:
-          </h3>
-          
-          {mode === 'encode' ? (
-            <div>
-              <ol className="list-decimal list-inside space-y-2 text-gray-600 mb-4">
-                <li>Selecione "Encode" para converter .zip em Base64</li>
-                <li>Arraste um arquivo .zip ou clique para selecionar</li>
-                <li>Aguarde o processamento automático</li>
-                <li>Escolha como compartilhar/baixar o resultado</li>
-              </ol>
-              
-              <div className="bg-blue-50 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-blue-800 mb-2">🌐 Opções de Acesso:</h4>
-                <ul className="text-sm text-blue-700 space-y-1">
-                  <li><strong>• Compartilhar URL:</strong> Gera link para acessar de qualquer lugar</li>
-                  <li><strong>• Download .txt:</strong> Arquivo para transferir manualmente</li>
-                </ul>
+        {/* Trust badges */}
+        <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fade-in-up" style={{ animationDelay: '.25s' }}>
+          {[
+            { icon: FiShield, label: 'Processamento Local', desc: 'Nada é enviado a servidores' },
+            { icon: FiZap, label: 'Ultra Rápido', desc: 'Conversão instantânea no browser' },
+            { icon: FiGlobe, label: 'Compartilhável', desc: 'Links acessíveis de qualquer PC' },
+          ].map(({ icon: Icon, label, desc }) => (
+            <div key={label} className="flex items-start gap-3 p-4 rounded-xl bg-white/[.02] border border-white/[.04]">
+              <div className="w-9 h-9 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
+                <Icon className="w-4 h-4 text-brand-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">{label}</p>
+                <p className="text-xs text-slate-500">{desc}</p>
               </div>
             </div>
-          ) : (
-            <ol className="list-decimal list-inside space-y-2 text-gray-600">
-              <li>Selecione "Decode" para converter Base64 em .zip</li>
-              <li>Cole a string Base64 na área de texto OU carregue um arquivo .txt</li>
-              <li>Clique em "Decodificar e Baixar ZIP"</li>
-              <li>O arquivo .zip será baixado automaticamente</li>
-            </ol>
-          )}
-          
-          <div className="mt-4 p-3 bg-purple-50 rounded-lg">
-            <p className="text-sm text-purple-800">
-              <strong>🌐 Acesso de Outros PCs:</strong><br/>
-              • Use "Compartilhar URL" para acessar de qualquer dispositivo<br/>
-              • URLs funcionam mesmo no GitHub Pages<br/>
-              • Dados ficam codificados na própria URL (sem servidor)
-            </p>
-          </div>
-          
-          <div className="mt-4 p-3 bg-green-50 rounded-lg">
-            <p className="text-sm text-green-800">
-              <strong>🔒 Privacidade:</strong> Todo processamento é local. Nenhum arquivo é enviado para servidores.
-            </p>
-          </div>
+          ))}
         </div>
+
+        {/* Footer */}
+        <footer className="mt-12 text-center text-xs text-slate-600">
+          <p>Base64 Vault &middot; Open Source &middot; Nenhum dado coletado</p>
+        </footer>
+      </div>
+
+      {/* Toasts */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
+        {toasts.map(t => (
+          <div
+            key={t.id}
+            className={`flex items-center gap-3 px-5 py-3 rounded-xl text-sm font-medium text-white shadow-lg animate-fade-in-up ${
+              t.type === 'success' ? 'bg-gradient-to-r from-emerald-600 to-emerald-500' :
+              t.type === 'error' ? 'bg-gradient-to-r from-red-600 to-red-500' :
+              'bg-gradient-to-r from-brand-600 to-brand-500'
+            }`}
+          >
+            {t.type === 'success' && <FiCheck className="w-4 h-4" />}
+            {t.message}
+          </div>
+        ))}
       </div>
     </div>
   );
